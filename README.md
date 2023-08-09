@@ -13,7 +13,7 @@ This is a Python script that simulates a conversation between a player and a non
     ```bash
     pip install -r requirements.txt`
     ```
-4. Create a `.env` file (use the `.env.example` as a boilerplate) in the same directory as the script and set your environment variables. For example, if you're using an OpenAI API key, your `.env` file should look like this:
+4. Create a `.env` file (use the `.env.template` as a boilerplate) in the same directory as the script and set your environment variables. For example, if you're using an OpenAI API key, your `.env` file should look like this:
     ```bash
     OPENAI_API_KEY=your_api_key_here
     ```
