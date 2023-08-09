@@ -1,0 +1,5 @@
+# Environment file
+.env
+
+# Version files
+.python-version
