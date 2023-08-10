@@ -23,9 +23,7 @@ This is a Python script that simulates a conversation between a player and a non
 1. Navigate to the directory where the game script is located.
 2. Start the game with the command:   
     ```bash
-    python rpgpt.py -p [platform]
+    python rpgpt.py
     ```
-    Replace `[platform]` with either `macos` or `windows` depending on your operating system.
-
 3. Follow the on-screen prompts to play the game. The player can input text, and the NPC will respond based on its predefined profile and the conversation history.
 4. Type `exit` at any time to end the game.
