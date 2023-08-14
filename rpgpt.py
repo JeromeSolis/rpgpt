@@ -48,7 +48,7 @@ def create_classifier(temperature):
     prompt_template = (
         "Based on the conversation below, classify as True or False whether "
         "access was granted to either enter the castle or meet with the king. "
-        "Only return the value in plain text.\n\n{memory}"
+        "Only return the value True or False in plain text.\n\n{memory}"
     )
     llm_classifier = LLMChain(
         llm = llm,
@@ -135,14 +135,15 @@ def get_intro(npc):
     response = llm_chain.predict(description=npc)
 
     print(
-        "Role-PlayingGPT\n---------------------------------------------" 
-        + response 
+        "Role-PlayingGPT\n---------------------------------------------\n" 
+        + response.lstrip(' \n') 
         + "\n---------------------------------------------"
     )
 
 # Generate a response from the NPC based on the player's input
 def get_passage_status(llm, memory):
     status = llm.predict(memory=memory)
+    status = status.lstrip(' \n')
     status = status.lower() == 'true'
 
     return status
