@@ -1,8 +1,14 @@
 import os
 import dotenv
 import uuid
+import json
 from pprint import pprint
-from db.log_db import log_generation, get_session_logs
+from db.log_db import (
+    log_generation, 
+    log_classification,
+    get_session_generation_logs,
+    get_session_classification_logs
+)
 from langchain import PromptTemplate, OpenAI, LLMChain
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import ConversationChain
@@ -13,6 +19,7 @@ from langchain.prompts.chat import (
     MessagesPlaceholder
 )
 from langchain.memory import ConversationBufferMemory
+from langchain.schema import messages_to_dict
 
 # Load OpenAI API key from .env file
 dotenv.load_dotenv()
@@ -24,6 +31,7 @@ TEMPERATURE_CLASSIFIER = 0.0
 # Create session unique ID
 session_id = str(uuid.uuid4())
 
+
 # Clear the command line screen
 def clear_screen():
     if os.name == 'nt':
@@ -33,13 +41,17 @@ def clear_screen():
 
 
 # Create a chatbot that maintains the conversation context
-def create_chat(temperature, chat_prompt):
+def create_chat(
+        temperature: float, chat_prompt: ChatPromptTemplate
+    ) -> (ConversationChain, ConversationBufferMemory):
+    # Create a LLM
     llm = ChatOpenAI(temperature=temperature)
+    # Create a memory for past conversations
     memory = ConversationBufferMemory(
         llm = llm, 
         return_messages = True
     )
-    
+    # Create a conversation chain
     conversation = ConversationChain(
         prompt = chat_prompt,
         llm = llm,
@@ -51,13 +63,16 @@ def create_chat(temperature, chat_prompt):
 
 
 # Create a classifier model to detect the status of the conversation
-def create_classifier(temperature):
+def create_classifier(temperature: float) -> LLMChain:
+    # Create a LLM used for the classification task
     llm = ChatOpenAI(model='gpt-3.5-turbo', temperature=temperature)
+    # Define the classification prompt
     prompt_template = (
         "Based on the conversation below, classify as True or False whether "
         "access was granted to either enter the castle or meet with the king. "
         "Only return the value True or False in plain text.\n\n{memory}"
     )
+    # Set the LLM with the prompt template
     llm_classifier = LLMChain(
         llm = llm,
         verbose = False,
@@ -68,7 +83,7 @@ def create_classifier(temperature):
 
 
 # Create a player profile for the NPC to interact with
-def create_player():
+def create_player() -> dict:
     player = {
             "name": "Boba Fett",
             "race": "Human"
@@ -78,7 +93,7 @@ def create_player():
 
 
 # Create a NPC profile for the player to interact with
-def create_npc():
+def create_npc() -> dict:
     npc = {
         "name": "Alfred",
         "role": "Distinguished Castle Guard",
@@ -94,7 +109,7 @@ def create_npc():
 
 
 # Create the prompt for handling the conversation between the player and the npc
-def get_prompt(player, npc):
+def get_prompt(player: dict, npc: dict) -> ChatPromptTemplate:
     # Create template for system and human prompt
     template_system = SystemMessagePromptTemplate.from_template(
         "You are a non-playable character in a role-playing game. You are a "
@@ -128,7 +143,7 @@ def get_prompt(player, npc):
 
 
 # Write an intro
-def get_intro(npc):
+def get_intro(npc: dict) -> str:
     prompt_template = (
         "Write a brief description of a game called Role-PlayingGPT (RPGPT). "
         "The objective of this game is for the player to convince the guard "
@@ -150,10 +165,26 @@ def get_intro(npc):
 
 
 # Generate a response from the NPC based on the player's input
-def get_passage_status(llm, memory):
-    status = llm.predict(memory=memory)
-    status = status.lstrip(' \n')
+def get_response(conversation: ConversationChain, input: str) -> str:
+    response = conversation.predict(input=input)
+    response = response.lstrip(' \n')
+    # Log response
+    log_generation(session_id, input, response)
+
+    return response
+
+
+# Predict whether access to granted to the castle
+def get_status(classifier: LLMChain, memory: ConversationBufferMemory) -> bool:
+    history = memory.chat_memory.messages
+    response = classifier.predict(memory=history)
+    status = response.lstrip(' \n')
     status = status.lower() == 'true'
+    # Log prediction
+    extracted_messages = memory.chat_memory.messages
+    ingest_messages = messages_to_dict(extracted_messages)
+    serialized_memory = json.dumps(ingest_messages)
+    log_classification(session_id, serialized_memory, response, status)
 
     return status
 
@@ -189,14 +220,12 @@ def main():
     print("\n__Castle Access__: " + str(status))
     user_input = input("Player [Default: Greetings my good Sir!]: ")
     user_input = user_input or "Greetings my good Sir!"
-    response = conversation.predict(input=user_input)
+    response = get_response(conversation, user_input)
     print("Guard: " + response)
-    log_generation(session_id, 'INFO', 'CHAT', user_input, response)
 
     while True:
         # Check if the guard has granted access to the castle
-        status = get_passage_status(classifier, memory.chat_memory.messages)
-        log_generation(session_id, 'INFO', 'STATUS', str(memory.chat_memory.messages), status)
+        status = get_status(classifier, memory)
         print("\n__Castle Access__: " + str(status))
         if status:
             break
@@ -207,18 +236,27 @@ def main():
             break
 
         # Get the npc's answer
-        response = conversation.predict(input=user_input)
+        response = get_response(conversation, user_input)
         print("Guard: " + response)
-        log_generation(session_id, 'INFO', 'CHAT', user_input, response)
 
     # Display session logs before exit
-    logs = get_session_logs(session_id)
+    generation_logs = get_session_generation_logs(session_id)
+    classification_logs = get_session_classification_logs(session_id)
     print(
         "\n\n###################\n"
         "## Session ended ##\n"
         "###################\n"
     )
-    pprint(logs)
+    print(
+        "-> Generation logs\n"
+        "-----------------------------\n"
+    )
+    pprint(generation_logs)
+    print(
+        "\n-> Classification logs\n"
+        "-----------------------------\n"
+    )
+    pprint(classification_logs)
 
 
 if __name__ == "__main__":
