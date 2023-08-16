@@ -1,5 +1,8 @@
 import os
 import dotenv
+import uuid
+from pprint import pprint
+from db.log_db import log_generation, get_session_logs
 from langchain import PromptTemplate, OpenAI, LLMChain
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import ConversationChain
@@ -15,8 +18,11 @@ from langchain.memory import ConversationBufferMemory
 dotenv.load_dotenv()
 
 # Set global variables
-temperature_chat = 1.0
-temperature_classifier = 0.0
+TEMPERATURE_CHAT = 1.0
+TEMPERATURE_CLASSIFIER = 0.0
+
+# Create session unique ID
+session_id = str(uuid.uuid4())
 
 # Clear the command line screen
 def clear_screen():
@@ -24,6 +30,7 @@ def clear_screen():
         os.system('cls')
     elif os.name == 'posix':
         os.system('clear')
+
 
 # Create a chatbot that maintains the conversation context
 def create_chat(temperature, chat_prompt):
@@ -42,6 +49,7 @@ def create_chat(temperature, chat_prompt):
 
     return conversation, memory
 
+
 # Create a classifier model to detect the status of the conversation
 def create_classifier(temperature):
     llm = ChatOpenAI(model='gpt-3.5-turbo', temperature=temperature)
@@ -58,6 +66,7 @@ def create_classifier(temperature):
 
     return llm_classifier
 
+
 # Create a player profile for the NPC to interact with
 def create_player():
     player = {
@@ -66,6 +75,7 @@ def create_player():
     }
 
     return player
+
 
 # Create a NPC profile for the player to interact with
 def create_npc():
@@ -81,6 +91,7 @@ def create_npc():
     }
 
     return npc
+
 
 # Create the prompt for handling the conversation between the player and the npc
 def get_prompt(player, npc):
@@ -115,6 +126,7 @@ def get_prompt(player, npc):
 
     return chat_prompt
 
+
 # Write an intro
 def get_intro(npc):
     prompt_template = (
@@ -127,18 +139,15 @@ def get_intro(npc):
         "in your description.\nDescription:"
     )
 
-    llm = OpenAI(temperature=temperature_chat)
+    llm = OpenAI(temperature=TEMPERATURE_CHAT)
     llm_chain = LLMChain(
         llm = llm,
         prompt = PromptTemplate.from_template(prompt_template)
     )
     response = llm_chain.predict(description=npc)
 
-    print(
-        "Role-PlayingGPT\n---------------------------------------------\n" 
-        + response.lstrip(' \n') 
-        + "\n---------------------------------------------"
-    )
+    return response.lstrip(' \n')
+
 
 # Generate a response from the NPC based on the player's input
 def get_passage_status(llm, memory):
@@ -147,6 +156,7 @@ def get_passage_status(llm, memory):
     status = status.lower() == 'true'
 
     return status
+
 
 # Interact with the player through the CLI
 def main():
@@ -159,26 +169,34 @@ def main():
     chat_prompt = get_prompt(player, npc)
 
     # Create the conversational chain with the LLM
-    [conversation, memory] = create_chat(temperature_chat, chat_prompt)
+    [conversation, memory] = create_chat(TEMPERATURE_CHAT, chat_prompt)
     
     # Create a classifier for detecting if the player gains access to the castle
-    classifier = create_classifier(temperature_classifier)
+    classifier = create_classifier(TEMPERATURE_CLASSIFIER)
 
     # Set default access status value
     status = False
 
     # Start the conversation between the player and the npc
-    get_intro(npc)
+    intro = get_intro(npc)
+    print(
+        "Role-PlayingGPT\n---------------------------------------------\n" 
+        + intro 
+        + "\n---------------------------------------------"
+    )
 
     # Initiate the conversation between the player and the npc
     print("\n__Castle Access__: " + str(status))
     user_input = input("Player [Default: Greetings my good Sir!]: ")
     user_input = user_input or "Greetings my good Sir!"
-    print("Guard: " + conversation.predict(input=user_input))
+    response = conversation.predict(input=user_input)
+    print("Guard: " + response)
+    log_generation(session_id, 'INFO', 'CHAT', user_input, response)
 
     while True:
         # Check if the guard has granted access to the castle
         status = get_passage_status(classifier, memory.chat_memory.messages)
+        log_generation(session_id, 'INFO', 'STATUS', str(memory.chat_memory.messages), status)
         print("\n__Castle Access__: " + str(status))
         if status:
             break
@@ -189,7 +207,19 @@ def main():
             break
 
         # Get the npc's answer
-        print("Guard: " + conversation.predict(input=user_input))
+        response = conversation.predict(input=user_input)
+        print("Guard: " + response)
+        log_generation(session_id, 'INFO', 'CHAT', user_input, response)
+
+    # Display session logs before exit
+    logs = get_session_logs(session_id)
+    print(
+        "\n\n###################\n"
+        "## Session ended ##\n"
+        "###################\n"
+    )
+    pprint(logs)
+
 
 if __name__ == "__main__":
     main()

@@ -3,3 +3,11 @@
 
 # Version files
 .python-version
+
+# Database file
+*.db
+
+# Cache file
+__pycache__/
+.vscode
+.DS_Store
