@@ -41,16 +41,18 @@ def clear_screen():
 
 
 # Create a chatbot that maintains the conversation context
-def create_chat(
+def create_conversation(
         temperature: float, chat_prompt: ChatPromptTemplate
     ) -> (ConversationChain, ConversationBufferMemory):
     # Create a LLM
     llm = ChatOpenAI(temperature=temperature)
+    
     # Create a memory for past conversations
     memory = ConversationBufferMemory(
         llm = llm, 
         return_messages = True
     )
+    
     # Create a conversation chain
     conversation = ConversationChain(
         prompt = chat_prompt,
@@ -66,12 +68,14 @@ def create_chat(
 def create_classifier(temperature: float) -> LLMChain:
     # Create a LLM used for the classification task
     llm = ChatOpenAI(model='gpt-3.5-turbo', temperature=temperature)
+    
     # Define the classification prompt
     prompt_template = (
         "Based on the conversation below, classify as True or False whether "
         "access was granted to either enter the castle or meet with the king. "
         "Only return the value True or False in plain text.\n\n{memory}"
     )
+
     # Set the LLM with the prompt template
     llm_classifier = LLMChain(
         llm = llm,
@@ -109,7 +113,7 @@ def create_npc() -> dict:
 
 
 # Create the prompt for handling the conversation between the player and the npc
-def get_prompt(player: dict, npc: dict) -> ChatPromptTemplate:
+def get_prompt(npc: dict) -> ChatPromptTemplate:
     # Create template for system and human prompt
     template_system = SystemMessagePromptTemplate.from_template(
         "You are a non-playable character in a role-playing game. You are a "
@@ -118,7 +122,7 @@ def get_prompt(player: dict, npc: dict) -> ChatPromptTemplate:
         "your weaknesses, you are easily swayed away from your duty."
     )
     template_npc= HumanMessagePromptTemplate.from_template("{input}")
-
+    
     # Create system prompt setting the global objective for the npc
     prompt_system = template_system.format(
         role = npc["role"], 
@@ -126,11 +130,6 @@ def get_prompt(player: dict, npc: dict) -> ChatPromptTemplate:
         objective = npc["objective"],
         weaknesses = npc["weaknesses"]
     )
-
-    # prompt_npc = template_npc.format(
-    #     race = player["race"],
-    #     utterance = user_input
-    # )
 
     # Create chat prompt that includes system prompt, conversation history and human prompt
     chat_prompt = ChatPromptTemplate.from_messages([
@@ -144,6 +143,7 @@ def get_prompt(player: dict, npc: dict) -> ChatPromptTemplate:
 
 # Write an intro
 def get_intro(npc: dict) -> str:
+    # Create template for the game's description
     prompt_template = (
         "Write a brief description of a game called Role-PlayingGPT (RPGPT). "
         "The objective of this game is for the player to convince the guard "
@@ -154,6 +154,7 @@ def get_intro(npc: dict) -> str:
         "in your description.\nDescription:"
     )
 
+    # Call an LLM to generate the game's description
     llm = OpenAI(temperature=TEMPERATURE_CHAT)
     llm_chain = LLMChain(
         llm = llm,
@@ -168,6 +169,7 @@ def get_intro(npc: dict) -> str:
 def get_response(conversation: ConversationChain, input: str) -> str:
     response = conversation.predict(input=input)
     response = response.lstrip(' \n')
+
     # Log response
     log_generation(session_id, input, response)
 
@@ -180,6 +182,7 @@ def get_status(classifier: LLMChain, memory: ConversationBufferMemory) -> bool:
     response = classifier.predict(memory=history)
     status = response.lstrip(' \n')
     status = status.lower() == 'true'
+
     # Log prediction
     extracted_messages = memory.chat_memory.messages
     ingest_messages = messages_to_dict(extracted_messages)
@@ -193,18 +196,13 @@ def get_status(classifier: LLMChain, memory: ConversationBufferMemory) -> bool:
 def main():
     # Clear the CLI
     clear_screen()
-
     # Create prompt initiating the conversation between a player and a npc
-    player = create_player()
     npc = create_npc()
-    chat_prompt = get_prompt(player, npc)
-
+    chat_prompt = get_prompt(npc)
     # Create the conversational chain with the LLM
-    [conversation, memory] = create_chat(TEMPERATURE_CHAT, chat_prompt)
-    
+    [conversation, memory] = create_conversation(TEMPERATURE_CHAT, chat_prompt)
     # Create a classifier for detecting if the player gains access to the castle
     classifier = create_classifier(TEMPERATURE_CLASSIFIER)
-
     # Set default access status value
     status = False
 
@@ -223,22 +221,21 @@ def main():
     response = get_response(conversation, user_input)
     print("Guard: " + response)
 
+    # Engage in multi-turn conversation until condition is met
     while True:
         # Check if the guard has granted access to the castle
         status = get_status(classifier, memory)
         print("\n__Castle Access__: " + str(status))
         if status:
             break
-
         # Ask the player for its next action
         user_input = input("Player: ")
         if user_input.lower() == 'exit':
             break
-
         # Get the npc's answer
         response = get_response(conversation, user_input)
         print("Guard: " + response)
-
+    
     # Display session logs before exit
     generation_logs = get_session_generation_logs(session_id)
     classification_logs = get_session_classification_logs(session_id)
